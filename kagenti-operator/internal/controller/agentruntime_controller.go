@@ -58,12 +58,18 @@ const (
 	ConditionTypeReady          = "Ready"
 	ConditionTypeTargetResolved = "TargetResolved"
 	ConditionTypeConfigResolved = "ConfigResolved"
+
+	// KindSandbox is the workload kind for agent-sandbox CRs.
+	KindSandbox = "Sandbox"
+
+	// AnnotationRestartPendingValue is the value set on AnnotationRestartPending.
+	AnnotationRestartPendingValue = "true"
 )
 
 var sandboxGVK = schema.GroupVersionKind{
 	Group:   "agents.x-k8s.io",
 	Version: "v1alpha1",
-	Kind:    "Sandbox",
+	Kind:    KindSandbox,
 }
 
 // AgentRuntimeReconciler reconciles AgentRuntime objects.
@@ -128,7 +134,7 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		fmt.Sprintf("%s %s resolved", rt.Spec.TargetRef.Kind, rt.Spec.TargetRef.Name))
 
 	// 4.1. Complete two-phase Sandbox restart if pending.
-	if rt.Spec.TargetRef.Kind == "Sandbox" {
+	if rt.Spec.TargetRef.Kind == KindSandbox {
 		if result, done, err := r.completeSandboxRestart(ctx, rt); done {
 			return result, err
 		}
@@ -308,7 +314,7 @@ func (r *AgentRuntimeReconciler) applyWorkloadConfig(ctx context.Context, rt *ag
 	// Phase 1: scale to 0 and mark restart-pending. Phase 2 runs on the next
 	// reconcile (triggered by the Sandbox watch) to clear stale annotations
 	// and scale back to 1. Two-phase avoids a race with the Sandbox controller.
-	if ref.Kind == "Sandbox" && configHashChanged {
+	if ref.Kind == KindSandbox && configHashChanged {
 		if err := r.beginSandboxRestart(ctx, key); err != nil {
 			return fmt.Errorf("sandbox restart (phase 1) failed: %w", err)
 		}
@@ -338,7 +344,7 @@ func (r *AgentRuntimeReconciler) beginSandboxRestart(ctx context.Context, key ty
 		if annotations == nil {
 			annotations = make(map[string]string)
 		}
-		annotations[AnnotationRestartPending] = "true"
+		annotations[AnnotationRestartPending] = AnnotationRestartPendingValue
 		obj.SetAnnotations(annotations)
 		return r.Update(ctx, obj)
 	})
@@ -361,7 +367,7 @@ func (r *AgentRuntimeReconciler) completeSandboxRestart(ctx context.Context, rt 
 	}
 
 	annotations := obj.GetAnnotations()
-	if annotations[AnnotationRestartPending] != "true" {
+	if annotations[AnnotationRestartPending] != AnnotationRestartPendingValue {
 		return ctrl.Result{}, false, nil
 	}
 
@@ -384,7 +390,7 @@ func (r *AgentRuntimeReconciler) completeSandboxRestart(ctx context.Context, rt 
 	})
 	if err != nil {
 		logger.Error(err, "Sandbox restart phase 2 failed, will retry")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, true, nil
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, true, err
 	}
 
 	if r.Recorder != nil {
@@ -431,7 +437,7 @@ func isPodOwnedByWorkload(pod *corev1.Pod, workloadName string) bool {
 		if ref.Kind == "StatefulSet" && ref.Name == workloadName {
 			return true
 		}
-		if ref.Kind == "Sandbox" && ref.Name == workloadName {
+		if ref.Kind == KindSandbox && ref.Name == workloadName {
 			return true
 		}
 	}
@@ -696,7 +702,7 @@ func (r *AgentRuntimeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		).
 		Watches(
 			sandboxObj,
-			handler.EnqueueRequestsFromMapFunc(r.mapWorkloadToAgentRuntime("agents.x-k8s.io/v1alpha1", "Sandbox")),
+			handler.EnqueueRequestsFromMapFunc(r.mapWorkloadToAgentRuntime("agents.x-k8s.io/v1alpha1", KindSandbox)),
 		).
 		Watches(
 			&corev1.ConfigMap{},
@@ -750,7 +756,7 @@ func newRuntimePodTemplateAccessor(kind string) (*runtimePodTemplateAccessor, bo
 				o.(*appsv1.StatefulSet).Spec.Template.Annotations = a
 			},
 		}, true
-	case "Sandbox":
+	case KindSandbox:
 		u := &unstructured.Unstructured{}
 		u.SetGroupVersionKind(sandboxGVK)
 		return &runtimePodTemplateAccessor{
