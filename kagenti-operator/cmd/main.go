@@ -97,7 +97,6 @@ func main() {
 	var requireA2ASignature bool
 	var signatureAuditMode bool
 	var enforceNetworkPolicies bool
-	var enableOperatorClientRegistration bool
 	var enableMLflow bool
 
 	var spireTrustDomain string
@@ -125,7 +124,7 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.BoolVar(&enableClientRegistration, "enable-client-registration", true,
-		"If set, AuthBridge webhook will register tool clients in Keycloak")
+		"Enable operator-based Keycloak client registration for agent/tool workloads")
 	flag.StringVar(&configPath, "config-path", "/etc/kagenti/config.yaml", "Path to platform config file")
 	flag.StringVar(&featureGatesPath, "feature-gates-path",
 		"/etc/kagenti/feature-gates/feature-gates.yaml", "Path to feature gates config file")
@@ -135,9 +134,6 @@ func main() {
 		"When true, log signature verification failures but don't block (use for rollout)")
 	flag.BoolVar(&enforceNetworkPolicies, "enforce-network-policies", false,
 		"Create NetworkPolicies to restrict traffic for agents with unverified signatures")
-	flag.BoolVar(&enableOperatorClientRegistration, "enable-operator-client-registration", false,
-		"Reconcile Keycloak client registration for agent/tool workloads unless "+
-			"kagenti.io/client-registration-inject=true (legacy sidecar)")
 	flag.BoolVar(&enableMLflow, "enable-mlflow", false,
 		"Enable MLflow experiment tracking integration")
 
@@ -391,7 +387,7 @@ func main() {
 		setupLog.Info("MLflow experiment tracking controller enabled")
 	}
 
-	if enableOperatorClientRegistration {
+	if enableClientRegistration {
 		operatorNS := getOperatorNamespace()
 		setupLog.Info("Client registration controller will read keycloak-admin-secret from operator namespace",
 			"namespace", operatorNS)
@@ -406,7 +402,7 @@ func main() {
 			setupLog.Error(err, "unable to create controller", "controller", "ClientRegistration")
 			os.Exit(1)
 		}
-		setupLog.Info("Operator-managed client registration controller enabled")
+		setupLog.Info("Operator-based client registration controller enabled")
 	}
 
 	if controller.TektonConfigCRDExists(mgr.GetConfig()) {
@@ -429,10 +425,12 @@ func main() {
 
 	// AuthBridge sidecar injection webhook
 	if authBridgeWebhooksEnabled() {
+		// Pass false to disable legacy client-registration sidecar injection.
+		// Client registration is now handled by the operator controller.
 		podMutator := injector.NewPodMutator(
 			mgr.GetClient(),
 			mgr.GetAPIReader(),
-			enableClientRegistration,
+			false, // disableLegacyClientRegistrationSidecar
 			configLoader.Get,
 			featureGateLoader.Get,
 		)
