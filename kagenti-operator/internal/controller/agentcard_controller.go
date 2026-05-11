@@ -95,6 +95,11 @@ const (
 	ReasonSignatureValid        = "SignatureValid"
 	ReasonSignatureInvalid      = "SignatureInvalid"
 	ReasonSignatureInvalidAudit = "SignatureInvalidAudit"
+
+	ReasonSigstoreVerified      = "SigstoreVerified"
+	ReasonSigstoreInvalid       = "SigstoreVerificationFailed"
+	ReasonSigstoreInvalidAudit  = "SigstoreVerificationFailedAudit"
+	ReasonSigstoreBundleMissing = "SigstoreBundleNotFound"
 )
 
 var (
@@ -131,6 +136,10 @@ type AgentCardReconciler struct {
 	SignatureProvider  signature.Provider
 	RequireSignature   bool
 	SignatureAuditMode bool
+
+	BundleVerifier             signature.BundleVerifier
+	EnableSigstoreVerification bool
+	SigstoreAuditMode          bool
 
 	// SpireTrustDomain can be overridden per-AgentCard via spec.identityBinding.trustDomain.
 	SpireTrustDomain string
@@ -242,6 +251,7 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	servicePort := r.getServicePort(service)
 	serviceURL := agentcard.GetServiceURL(workload.ServiceName, agentCard.Namespace, servicePort)
 
+	// Use fetchCardData which handles both mTLS authenticated fetch and regular HTTP fetch
 	cardData, fetchResult, err := r.fetchCardData(ctx, agentCard, protocol, serviceURL, workload, service)
 	if err != nil {
 		if condErr := r.updateCondition(ctx, agentCard,
@@ -249,6 +259,51 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return ctrl.Result{}, condErr
 		}
 		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+	}
+	cardData := fetchResult.Card
+
+	var sigstoreResult *signature.BundleVerificationResult
+	if r.EnableSigstoreVerification && r.BundleVerifier != nil {
+		if len(fetchResult.RawSignedAgentCardJSON) > 0 {
+			var sErr error
+			sigstoreResult, sErr = r.BundleVerifier.VerifySignedAgentCard(ctx, fetchResult.RawSignedAgentCardJSON, agentCard.Spec.SigstoreVerification)
+			if sErr != nil {
+				agentCardLogger.Error(sErr, "Sigstore bundle verification error", "workload", workload.Name)
+				// M-3: Set failed result so enforcement mode can reject the card
+				sigstoreResult = &signature.BundleVerificationResult{
+					Verified: false,
+					Details:  fmt.Sprintf("infrastructure error: %s", sErr.Error()),
+				}
+				if r.Recorder != nil {
+					r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SigstoreVerificationFailed",
+						fmt.Sprintf("Infrastructure error during Sigstore verification: %s", sErr.Error()))
+				}
+			} else if sigstoreResult != nil {
+				// P-3: Emit events for Sigstore verification
+				if sigstoreResult.Verified {
+					if r.Recorder != nil {
+						msg := fmt.Sprintf("Sigstore bundle verified successfully (identity=%s, rekorLogIndex=%s)",
+							sigstoreResult.Identity, sigstoreResult.RekorLogIndex)
+						r.Recorder.Event(agentCard, corev1.EventTypeNormal, "SigstoreVerified", msg)
+					}
+				} else if !sigstoreResult.Absent {
+					if r.Recorder != nil {
+						r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SigstoreVerificationFailed",
+							sigstoreResult.Details)
+					}
+				}
+			}
+		} else {
+			sigstoreResult = &signature.BundleVerificationResult{
+				Absent:   true,
+				Verified: false,
+				Details:  "only plain agent card available (no SignedAgentCard attestations); supply-chain bundle not present",
+			}
+			if r.Recorder != nil {
+				r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SigstoreBundleNotFound",
+					"No Sigstore bundle found - plain agent card without attestations")
+			}
+		}
 	}
 
 	trust := r.evaluateTrust(ctx, agentCard, cardData, fetchResult, workload)
@@ -722,6 +777,7 @@ func (r *AgentCardReconciler) getSyncPeriod(agentCard *agentv1alpha1.AgentCard) 
 //     Absent when no trust mechanism is configured.
 //   - SignatureVerified: raw JWS cryptographic outcome (informational only, not used
 //     for enforcement). Reflects whether the x5c signature is mathematically valid.
+//   - SigstoreVerified: supply-chain verification via Sigstore bundle attestations.
 //   - Synced: whether the agent card was successfully fetched.
 //   - Ready: composite signal — True when Synced is True AND (Verified is True or absent).
 //   - Bound: whether identity binding constraints are satisfied.
@@ -732,6 +788,7 @@ func (r *AgentCardReconciler) updateAgentCardStatus( //nolint:gocyclo
 	binding *bindingResult, identityMatch *bool, mTLSVerified bool,
 	verifiedReason string, verifiedStatus metav1.ConditionStatus,
 	verifiedMessage string, attestedSpiffeID string,
+	sigstoreResult *signature.BundleVerificationResult,
 ) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &agentv1alpha1.AgentCard{}
@@ -782,6 +839,62 @@ func (r *AgentCardReconciler) updateAgentCardStatus( //nolint:gocyclo
 			meta.SetStatusCondition(&latest.Status.Conditions, sigCondition)
 		}
 
+		// Populate Sigstore verification status fields
+		if r.EnableSigstoreVerification && sigstoreResult != nil {
+			if sigstoreResult.Absent {
+				absent := false
+				latest.Status.SigstoreBundleVerified = &absent
+				latest.Status.SigstoreIdentity = ""
+				latest.Status.RekorLogIndex = ""
+				latest.Status.SLSARepository = ""
+				latest.Status.SLSACommitSHA = ""
+				meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+					Type:    "SigstoreVerified",
+					Status:  metav1.ConditionFalse,
+					Reason:  ReasonSigstoreBundleMissing,
+					Message: sigstoreResult.Details,
+				})
+			} else {
+				latest.Status.SigstoreBundleVerified = &sigstoreResult.Verified
+				if sigstoreResult.Verified {
+					latest.Status.SigstoreIdentity = sigstoreResult.Identity
+					latest.Status.RekorLogIndex = sigstoreResult.RekorLogIndex
+					latest.Status.SLSARepository = sigstoreResult.SLSARepository
+					latest.Status.SLSACommitSHA = sigstoreResult.SLSACommitSHA
+				} else {
+					latest.Status.SigstoreIdentity = ""
+					latest.Status.RekorLogIndex = ""
+					latest.Status.SLSARepository = ""
+					latest.Status.SLSACommitSHA = ""
+				}
+				sigStoreCond := metav1.Condition{Type: "SigstoreVerified"}
+				if sigstoreResult.Verified {
+					sigStoreCond.Status = metav1.ConditionTrue
+					sigStoreCond.Reason = ReasonSigstoreVerified
+					sigStoreCond.Message = sigstoreResult.Details
+				} else {
+					sigStoreCond.Status = metav1.ConditionFalse
+					if r.SigstoreAuditMode {
+						sigStoreCond.Reason = ReasonSigstoreInvalidAudit
+						sigStoreCond.Message = sigstoreResult.Details + " (audit mode: allowed)"
+					} else {
+						sigStoreCond.Reason = ReasonSigstoreInvalid
+						sigStoreCond.Message = sigstoreResult.Details
+					}
+				}
+				meta.SetStatusCondition(&latest.Status.Conditions, sigStoreCond)
+			}
+		} else {
+			// Clear Sigstore status fields when verification is disabled
+			latest.Status.SigstoreBundleVerified = nil
+			latest.Status.SigstoreIdentity = ""
+			latest.Status.RekorLogIndex = ""
+			latest.Status.SLSARepository = ""
+			latest.Status.SLSACommitSHA = ""
+			meta.RemoveStatusCondition(&latest.Status.Conditions, "SigstoreVerified")
+		}
+
+		// Set Synced condition to false if JWS verification failed (when not mTLS-verified and not audit mode)
 		if verificationResult != nil && !verificationResult.Verified && !r.SignatureAuditMode && !mTLSVerified {
 			meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 				Type:    "Synced",
@@ -789,12 +902,24 @@ func (r *AgentCardReconciler) updateAgentCardStatus( //nolint:gocyclo
 				Reason:  ReasonSignatureInvalid,
 				Message: verificationResult.Details,
 			})
+		// Check if Sigstore verification failed (when not in audit mode)
+		} else if sigstoreResult != nil && !sigstoreResult.Absent && !sigstoreResult.Verified && !r.SigstoreAuditMode {
+			meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+				Type:    "Synced",
+				Status:  metav1.ConditionFalse,
+				Reason:  ReasonSigstoreInvalid,
+				Message: sigstoreResult.Details,
+			})
 		} else {
+			// Both verifications passed or are in audit mode - set Synced to True
 			message := fmt.Sprintf("Successfully fetched agent card for %s", cardData.Name)
 			if verificationResult != nil && !verificationResult.Verified && r.SignatureAuditMode {
 				message = fmt.Sprintf("Fetched agent card for %s (signature verification failed but audit mode enabled)", cardData.Name)
 			} else if mTLSVerified && verificationResult != nil && !verificationResult.Verified {
 				message = fmt.Sprintf("Successfully fetched agent card for %s (mTLS verified, no JWS signature)", cardData.Name)
+			}
+			if sigstoreResult != nil && !sigstoreResult.Absent && !sigstoreResult.Verified && r.SigstoreAuditMode {
+				message = fmt.Sprintf("%s (Sigstore bundle failed audit mode)", message)
 			}
 			meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 				Type:    "Synced",
