@@ -58,6 +58,6 @@ Dockerfile.cross
 
 # spex: generated/local files
 .claude/skills/
+.claude/settings.json
 .claude/settings.local.json
-.specify/.spex-phase
-.specify/.spex-state
+.specify/
