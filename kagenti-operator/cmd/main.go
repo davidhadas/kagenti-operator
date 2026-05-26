@@ -526,6 +526,18 @@ func main() {
 			os.Exit(1)
 		}
 		setupLog.Info("MLflow UI config bootstrap enabled")
+
+		if err = (&controller.MLflowOperandReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+			//nolint:staticcheck // consistent with existing controllers
+			Recorder:          mgr.GetEventRecorderFor("mlflow-operand-controller"),
+			OperatorNamespace: getOperatorNamespace(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "MLflowOperand")
+			os.Exit(1)
+		}
+		setupLog.Info("MLflow operand controller enabled")
 	}
 
 	if enableClientRegistration {
