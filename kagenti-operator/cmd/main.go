@@ -598,7 +598,7 @@ func main() {
 		Client:              mgr.GetClient(),
 		APIReader:           mgr.GetAPIReader(),
 		Scheme:              mgr.GetScheme(),
-		Recorder:            mgr.GetEventRecorderFor("agentruntime-controller"),
+		Recorder:            mgr.GetEventRecorder("agentruntime-controller"),
 		EnableCardDiscovery: enableCardDiscovery,
 		SpireTrustDomain:    spireTrustDomain,
 		GetFeatureGates:     featureGateLoader.Get,
@@ -620,7 +620,7 @@ func main() {
 		if err = (&controller.MLflowReconciler{
 			Client:       mgr.GetClient(),
 			Scheme:       mgr.GetScheme(),
-			Recorder:     mgr.GetEventRecorderFor("mlflow-controller"), //nolint:staticcheck
+			Recorder:     mgr.GetEventRecorder("mlflow-controller"),
 			MLflowCAFile: mlflowCAFile,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "MLflow")

@@ -35,7 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -122,7 +122,7 @@ type WorkloadInfo struct {
 type AgentCardReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
-	Recorder record.EventRecorder
+	Recorder events.EventRecorder
 
 	AgentFetcher agentcard.Fetcher
 
@@ -215,7 +215,7 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				return ctrl.Result{}, bindErr
 			}
 			if r.Recorder != nil {
-				r.Recorder.Event(agentCard, corev1.EventTypeWarning, ReasonAgentNotFound, message)
+				r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, ReasonAgentNotFound, "FetchAgentCard", message)
 			}
 		}
 		return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
@@ -275,21 +275,21 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 					Details:  fmt.Sprintf("infrastructure error: %s", sErr.Error()),
 				}
 				if r.Recorder != nil {
-					r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SigstoreVerificationFailed",
-						fmt.Sprintf("Infrastructure error during Sigstore verification: %s", sErr.Error()))
+					r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "SigstoreVerificationFailed",
+						"VerifySigstore", "Infrastructure error during Sigstore verification: %s", sErr.Error())
 				}
 			} else if sigstoreResult != nil {
 				// P-3: Emit events for Sigstore verification
 				if sigstoreResult.Verified {
 					if r.Recorder != nil {
-						msg := fmt.Sprintf("Sigstore bundle verified successfully (identity=%s, rekorLogIndex=%s)",
+						r.Recorder.Eventf(agentCard, nil, corev1.EventTypeNormal, "SigstoreVerified",
+							"VerifySigstore", "Sigstore bundle verified successfully (identity=%s, rekorLogIndex=%s)",
 							sigstoreResult.Identity, sigstoreResult.RekorLogIndex)
-						r.Recorder.Event(agentCard, corev1.EventTypeNormal, "SigstoreVerified", msg)
 					}
 				} else if !sigstoreResult.Absent {
 					if r.Recorder != nil {
-						r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SigstoreVerificationFailed",
-							sigstoreResult.Details)
+						r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "SigstoreVerificationFailed",
+							"VerifySigstore", sigstoreResult.Details)
 					}
 				}
 			}
@@ -300,8 +300,8 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				Details:  "only plain agent card available (no SignedAgentCard attestations); supply-chain bundle not present",
 			}
 			if r.Recorder != nil {
-				r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SigstoreBundleNotFound",
-					"No Sigstore bundle found - plain agent card without attestations")
+				r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "SigstoreBundleNotFound",
+					"VerifySigstore", "No Sigstore bundle found - plain agent card without attestations")
 			}
 		}
 	}
@@ -467,8 +467,8 @@ func (r *AgentCardReconciler) evaluateTrust( //nolint:gocyclo
 		if eval.verificationResult != nil {
 			if eval.verificationResult.Verified {
 				if r.Recorder != nil {
-					r.Recorder.Event(agentCard, corev1.EventTypeNormal, "SignatureEvaluated",
-						fmt.Sprintf("Signature verified successfully (keyID=%s)", eval.verificationResult.KeyID))
+					r.Recorder.Eventf(agentCard, nil, corev1.EventTypeNormal, "SignatureEvaluated",
+						"VerifySignature", "Signature verified successfully (keyID=%s)", eval.verificationResult.KeyID)
 				}
 			} else {
 				reason := ReasonSignatureInvalid
@@ -480,7 +480,8 @@ func (r *AgentCardReconciler) evaluateTrust( //nolint:gocyclo
 					"reason", reason,
 					"details", eval.verificationResult.Details)
 				if r.Recorder != nil {
-					r.Recorder.Event(agentCard, corev1.EventTypeWarning, "SignatureFailed", eval.verificationResult.Details)
+					r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "SignatureFailed",
+						"VerifySignature", eval.verificationResult.Details)
 				}
 			}
 		}
@@ -982,9 +983,11 @@ func (r *AgentCardReconciler) updateAgentCardStatus(
 			if existingBound == nil || existingBound.Status != newConditionStatus {
 				if r.Recorder != nil {
 					if binding.Bound {
-						r.Recorder.Event(agentCard, corev1.EventTypeNormal, "BindingEvaluated", binding.Message)
+						r.Recorder.Eventf(agentCard, nil, corev1.EventTypeNormal, "BindingEvaluated",
+							"EvaluateBinding", binding.Message)
 					} else {
-						r.Recorder.Event(agentCard, corev1.EventTypeWarning, "BindingFailed", binding.Message)
+						r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "BindingFailed",
+							"EvaluateBinding", binding.Message)
 					}
 				}
 			}
@@ -1561,7 +1564,8 @@ func (r *AgentCardReconciler) maybeRestartForResign(ctx context.Context, agentCa
 	agentCardLogger.Info("Triggering proactive workload restart for re-signing",
 		"workload", workload.Name, "kind", workload.Kind, "reason", reason)
 	if r.Recorder != nil {
-		r.Recorder.Event(agentCard, corev1.EventTypeNormal, "ResignTriggered", reason)
+		r.Recorder.Eventf(agentCard, nil, corev1.EventTypeNormal, "ResignTriggered",
+			"TriggerResign", reason)
 	}
 
 	r.triggerRolloutRestart(ctx, acc, key, currentBundleHash, vr.LeafNotAfter)

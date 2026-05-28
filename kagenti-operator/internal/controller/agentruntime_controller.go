@@ -38,7 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -94,7 +94,7 @@ var sandboxGVK = schema.GroupVersionKind{
 type AgentRuntimeReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
-	Recorder  record.EventRecorder
+	Recorder  events.EventRecorder
 	APIReader client.Reader // uncached reader for cross-namespace ConfigMap reads
 
 	AgentFetcher         agentcard.Fetcher
@@ -157,7 +157,8 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		logger.Error(err, "Failed to resolve targetRef")
 		r.updateErrorStatus(ctx, req.NamespacedName, ConditionTypeTargetResolved, "TargetNotFound", err.Error())
 		if r.Recorder != nil {
-			r.Recorder.Event(rt, corev1.EventTypeWarning, "TargetNotFound", err.Error())
+			r.Recorder.Eventf(rt, nil, corev1.EventTypeWarning, "TargetNotFound",
+				"ResolveTarget", err.Error())
 		}
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
@@ -178,7 +179,8 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.ensureNamespaceConfigMaps(ctx, rt.Namespace); err != nil {
 		logger.Error(err, "Failed to ensure namespace ConfigMaps")
 		if r.Recorder != nil {
-			r.Recorder.Event(rt, corev1.EventTypeWarning, "ConfigMapEnsureError", err.Error())
+			r.Recorder.Eventf(rt, nil, corev1.EventTypeWarning, "ConfigMapEnsureError",
+				"EnsureConfigMaps", err.Error())
 		}
 	}
 
@@ -231,7 +233,8 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			strings.Join(configResult.Warnings, "; "))
 		if r.Recorder != nil {
 			for _, w := range configResult.Warnings {
-				r.Recorder.Event(rt, corev1.EventTypeWarning, "ConfigWarning", w)
+				r.Recorder.Eventf(rt, nil, corev1.EventTypeWarning, "ConfigWarning",
+					"ResolveConfig", w)
 			}
 		}
 	} else {
@@ -284,8 +287,8 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if r.Recorder != nil {
-		r.Recorder.Event(rt, corev1.EventTypeNormal, "Configured",
-			fmt.Sprintf("Applied config to %s %s", rt.Spec.TargetRef.Kind, rt.Spec.TargetRef.Name))
+		r.Recorder.Eventf(rt, nil, corev1.EventTypeNormal, "Configured",
+			"ApplyConfig", "Applied config to %s %s", rt.Spec.TargetRef.Kind, rt.Spec.TargetRef.Name)
 	}
 
 	return ctrl.Result{}, nil
@@ -474,8 +477,8 @@ func (r *AgentRuntimeReconciler) completeSandboxRestart(ctx context.Context, rt 
 	}
 
 	if r.Recorder != nil {
-		r.Recorder.Event(rt, corev1.EventTypeNormal, "SandboxRestarted",
-			fmt.Sprintf("Sandbox %s restarted via scale 0→1", ref.Name))
+		r.Recorder.Eventf(rt, nil, corev1.EventTypeNormal, "SandboxRestarted",
+			"RestartSandbox", "Sandbox %s restarted via scale 0→1", ref.Name)
 	}
 
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, true, nil
