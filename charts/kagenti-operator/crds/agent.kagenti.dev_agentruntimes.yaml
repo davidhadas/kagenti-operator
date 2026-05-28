@@ -449,9 +449,8 @@ spec:
                     description: TransportSecurity indicates the transport layer used
                       for the card fetch.
                     enum:
-                    - mTLS
-                    - plainHTTP
-                    - configMap
+                    - mtls
+                    - http
                     type: string
                   url:
                     description: The URL of the agent's endpoint.

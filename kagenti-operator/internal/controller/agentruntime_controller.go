@@ -830,7 +830,7 @@ func (r *AgentRuntimeReconciler) fetchAndUpdateCard(ctx context.Context, rt *age
 	rt.Status.Card = cardStatus
 
 	conditionReason := "Fetched"
-	if transportSecurity == "plainHTTP" {
+	if transportSecurity == agentv1alpha1.TransportSecurityHTTP {
 		conditionReason = "FetchedInsecure"
 	}
 	r.setCondition(rt, ConditionTypeCardFetched, metav1.ConditionTrue, conditionReason,
@@ -866,12 +866,11 @@ func (r *AgentRuntimeReconciler) persistCardFetchAnnotation(ctx context.Context,
 }
 
 // fetchCard retrieves the agent card, choosing mTLS or plain HTTP based on
-// service port availability and fetcher configuration. Returns the transport
-// security string ("mTLS" or "plainHTTP") alongside the card data.
+// service port availability and fetcher configuration.
 func (r *AgentRuntimeReconciler) fetchCard(
 	ctx context.Context, rt *agentv1alpha1.AgentRuntime,
 	svc *corev1.Service, port int32, protocol string,
-) (*agentv1alpha1.AgentCardData, *agentcard.FetchResult, string, error) {
+) (*agentv1alpha1.AgentCardData, *agentcard.FetchResult, agentv1alpha1.TransportSecurity, error) {
 	logger := log.FromContext(ctx)
 	ref := rt.Spec.TargetRef
 
@@ -886,7 +885,7 @@ func (r *AgentRuntimeReconciler) fetchCard(
 			if fetchResult.CardData == nil {
 				return nil, nil, "", fmt.Errorf("authenticated fetch returned nil card data for %s", ref.Name)
 			}
-			return fetchResult.CardData, fetchResult, "mTLS", nil
+			return fetchResult.CardData, fetchResult, agentv1alpha1.TransportSecurityMTLS, nil
 		}
 		logger.Info("TLS port not found, falling back to HTTP fetch",
 			"service", svc.Name, "expectedPortName", AgentTLSPortName)
@@ -908,7 +907,7 @@ func (r *AgentRuntimeReconciler) fetchCard(
 	if cardData == nil {
 		return nil, nil, "", fmt.Errorf("fetch returned nil card data for %s", ref.Name)
 	}
-	return cardData, nil, "plainHTTP", nil
+	return cardData, nil, agentv1alpha1.TransportSecurityHTTP, nil
 }
 
 // workloadChangeKey returns a string that changes when the workload's pod

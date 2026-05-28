@@ -1116,7 +1116,7 @@ var _ = Describe("AgentRuntime Controller", func() {
 			r.fetchAndUpdateCard(ctx, rt)
 
 			Expect(rt.Status.Card).NotTo(BeNil())
-			Expect(rt.Status.Card.TransportSecurity).To(Equal("plainHTTP"))
+			Expect(rt.Status.Card.TransportSecurity).To(Equal(agentv1alpha1.TransportSecurityHTTP))
 
 			cardCond := meta.FindStatusCondition(rt.Status.Conditions, ConditionTypeCardFetched)
 			Expect(cardCond).NotTo(BeNil())
@@ -1161,7 +1161,7 @@ var _ = Describe("AgentRuntime Controller", func() {
 			r.fetchAndUpdateCard(ctx, rt)
 
 			Expect(rt.Status.Card).NotTo(BeNil())
-			Expect(rt.Status.Card.TransportSecurity).To(Equal("mTLS"))
+			Expect(rt.Status.Card.TransportSecurity).To(Equal(agentv1alpha1.TransportSecurityMTLS))
 			Expect(rt.Status.Card.AttestedAgentSpiffeID).To(Equal("spiffe://trust.domain/agent"))
 
 			cardCond := meta.FindStatusCondition(rt.Status.Conditions, ConditionTypeCardFetched)
@@ -1206,7 +1206,7 @@ var _ = Describe("AgentRuntime Controller", func() {
 			}
 			r.fetchAndUpdateCard(ctx, rt)
 			Expect(rt.Status.Card).NotTo(BeNil())
-			Expect(rt.Status.Card.TransportSecurity).To(Equal("mTLS"))
+			Expect(rt.Status.Card.TransportSecurity).To(Equal(agentv1alpha1.TransportSecurityMTLS))
 
 			// Clear the change key annotation to force a re-fetch
 			annotations := rt.GetAnnotations()
@@ -1223,7 +1223,7 @@ var _ = Describe("AgentRuntime Controller", func() {
 			}
 			r2.fetchAndUpdateCard(ctx, rt)
 			Expect(rt.Status.Card).NotTo(BeNil())
-			Expect(rt.Status.Card.TransportSecurity).To(Equal("plainHTTP"))
+			Expect(rt.Status.Card.TransportSecurity).To(Equal(agentv1alpha1.TransportSecurityHTTP))
 
 			cardCond := meta.FindStatusCondition(rt.Status.Conditions, ConditionTypeCardFetched)
 			Expect(cardCond).NotTo(BeNil())

@@ -37,6 +37,14 @@ const (
 	RuntimePhaseError   RuntimePhase = "Error"
 )
 
+// +kubebuilder:validation:Enum=mtls;http
+type TransportSecurity string
+
+const (
+	TransportSecurityMTLS TransportSecurity = "mtls"
+	TransportSecurityHTTP TransportSecurity = "http"
+)
+
 // AgentRuntimeSpec defines the desired state of AgentRuntime.
 type AgentRuntimeSpec struct {
 	// Type classifies the workload as an agent or tool
@@ -167,8 +175,7 @@ type CardStatus struct {
 
 	// TransportSecurity indicates the transport layer used for the card fetch.
 	// +optional
-	// +kubebuilder:validation:Enum=mTLS;plainHTTP;configMap
-	TransportSecurity string `json:"transportSecurity,omitempty"`
+	TransportSecurity TransportSecurity `json:"transportSecurity,omitempty"`
 
 	// ValidSignature is the result of JWS signature verification.
 	// +optional
