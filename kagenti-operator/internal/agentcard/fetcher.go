@@ -357,22 +357,20 @@ func (f *SpiffeFetcher) fetchAuthenticatedFromPath(ctx context.Context, serviceU
 		return nil, err
 	}
 
-	var agentCardData agentv1alpha1.AgentCardData
-	if err := json.Unmarshal(body, &agentCardData); err != nil {
-		return nil, fmt.Errorf("failed to parse agent card JSON: %w", err)
+	result, err := decodeAgentCardPayload(body)
+	if err != nil {
+		return nil, err
 	}
 
 	agentSpiffeID := extractSpiffeIDFromTLS(tlsState)
+	result.AgentSpiffeID = agentSpiffeID
 
 	fetcherLogger.Info("Successfully fetched agent card (mTLS)",
-		"name", agentCardData.Name,
-		"version", agentCardData.Version,
+		"name", result.CardData.Name,
+		"version", result.CardData.Version,
 		"agentSpiffeID", agentSpiffeID)
 
-	return &FetchResult{
-		CardData:      &agentCardData,
-		AgentSpiffeID: agentSpiffeID,
-	}, nil
+	return result, nil
 }
 
 // extractSpiffeIDFromTLS returns the SPIFFE ID from the verified peer

@@ -1099,7 +1099,7 @@ type mockFetcherFunc struct {
 func (m *mockFetcherFunc) Fetch(
 	_ context.Context, _, _, _, _ string,
 ) (*agentcard.FetchResult, error) {
-	return &agentcard.FetchResult{Card: m.fn()}, nil
+	return &agentcard.FetchResult{CardData: m.fn()}, nil
 }
 
 // mockSignatureProvider wraps VerifyJWS with a fixed public key for tests.

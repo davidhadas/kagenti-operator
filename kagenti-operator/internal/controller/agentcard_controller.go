@@ -184,7 +184,7 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		agentCardLogger.Info("AgentCard is deprecated; card data is now available via AgentRuntime status.card. Migrate to AgentRuntime-based discovery.",
 			"agentCard", agentCard.Name, "namespace", agentCard.Namespace)
 		if r.Recorder != nil {
-			r.Recorder.Event(agentCard, corev1.EventTypeWarning, "Deprecated",
+			r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "Deprecated", "Reconcile",
 				"AgentCard is deprecated; card data is now available via AgentRuntime status.card. Migrate to AgentRuntime-based discovery.")
 		}
 	}
@@ -311,9 +311,9 @@ func (r *AgentCardReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	cardID := r.computeCardID(cardData)
 	if cardID != "" && agentCard.Status.CardId != "" && agentCard.Status.CardId != cardID {
 		if r.Recorder != nil {
-			r.Recorder.Event(agentCard, corev1.EventTypeWarning, "CardContentChanged",
-				fmt.Sprintf("Agent card content changed: previous=%s, current=%s",
-					agentCard.Status.CardId, cardID))
+			r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "CardContentChanged", "Reconcile",
+				"Agent card content changed: previous=%s, current=%s",
+				agentCard.Status.CardId, cardID)
 		}
 		agentCardLogger.Info("Card content changed",
 			"agentCard", agentCard.Name,
@@ -413,9 +413,9 @@ func (r *AgentCardReconciler) fetchCardData(
 		agentCardLogger.Info("TLS port not found on service, falling back to HTTP fetch",
 			"service", workload.ServiceName, "expectedPortName", AgentTLSPortName)
 		if r.Recorder != nil {
-			r.Recorder.Event(agentCard, corev1.EventTypeWarning, "FallbackToHTTP",
-				fmt.Sprintf("Service %s has no %s port; fetch is unverified",
-					workload.ServiceName, AgentTLSPortName))
+			r.Recorder.Eventf(agentCard, nil, corev1.EventTypeWarning, "FallbackToHTTP", "FetchCard",
+				"Service %s has no %s port; fetch is unverified",
+				workload.ServiceName, AgentTLSPortName)
 		}
 		fetchResult, err := r.AgentFetcher.Fetch(
 			ctx, protocol, serviceURL, workload.ServiceName, agentCard.Namespace)

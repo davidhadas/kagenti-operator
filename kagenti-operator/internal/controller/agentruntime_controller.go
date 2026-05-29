@@ -537,8 +537,8 @@ func (r *AgentRuntimeReconciler) readLinkedSkills(ctx context.Context, rt *agent
 	if err := json.Unmarshal([]byte(raw), &skills); err != nil {
 		logger.V(1).Info("Failed to parse kagenti.io/skills annotation", "error", err, "raw", raw)
 		if r.Recorder != nil {
-			r.Recorder.Event(rt, corev1.EventTypeWarning, "SkillAnnotationParseError",
-				fmt.Sprintf("Failed to parse kagenti.io/skills annotation: %v", err))
+			r.Recorder.Eventf(rt, nil, corev1.EventTypeWarning, "SkillAnnotationParseError",
+				"ReadLinkedSkills", "Failed to parse kagenti.io/skills annotation: %v", err)
 		}
 		return nil
 	}
@@ -915,8 +915,8 @@ func (r *AgentRuntimeReconciler) fetchCard(
 		logger.Info("TLS port not found, falling back to HTTP fetch",
 			"service", svc.Name, "expectedPortName", AgentTLSPortName)
 		if r.Recorder != nil {
-			r.Recorder.Event(rt, corev1.EventTypeWarning, "FallbackToHTTP",
-				fmt.Sprintf("Service %s has no %s port; fetch is unverified", svc.Name, AgentTLSPortName))
+			r.Recorder.Eventf(rt, nil, corev1.EventTypeWarning, "FallbackToHTTP", "FetchCard",
+				"Service %s has no %s port; fetch is unverified", svc.Name, AgentTLSPortName)
 		}
 	}
 

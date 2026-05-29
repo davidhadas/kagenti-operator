@@ -30,7 +30,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -50,7 +50,7 @@ func (m *mockFetcher) Fetch(
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &agentcard.FetchResult{Card: m.cardData}, nil
+	return &agentcard.FetchResult{CardData: m.cardData}, nil
 }
 
 // capturingProtocolFetcher records the protocol passed to Fetch (for multi-protocol label tests).
@@ -67,9 +67,9 @@ func (c *capturingProtocolFetcher) Fetch(
 	c.protocol = protocol
 	c.mu.Unlock()
 	if c.cardData != nil {
-		return &agentcard.FetchResult{Card: c.cardData}, nil
+		return &agentcard.FetchResult{CardData: c.cardData}, nil
 	}
-	return &agentcard.FetchResult{Card: &agentv1alpha1.AgentCardData{
+	return &agentcard.FetchResult{CardData: &agentv1alpha1.AgentCardData{
 		Name:    "capture",
 		Version: "1.0.0",
 		URL:     "http://0.0.0.0:8000",
@@ -1807,7 +1807,7 @@ var _ = Describe("AgentCard Controller - getSyncPeriod", func() {
 					URL:     "http://deprecation-deploy.default.svc.cluster.local:8000",
 				},
 			}
-			fakeRecorder := record.NewFakeRecorder(10)
+			fakeRecorder := events.NewFakeRecorder(10)
 			reconciler := &AgentCardReconciler{
 				Client:       k8sClient,
 				Scheme:       k8sClient.Scheme(),
