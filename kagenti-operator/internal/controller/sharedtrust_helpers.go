@@ -37,6 +37,9 @@ func verifyCAFingerprint(rootCertPEM, intermediateCACertPEM []byte) (bool, error
 	return rootFP == intFP, nil
 }
 
+// certFingerprint returns the SHA256 of the first certificate's raw DER.
+// Only the first PEM block is decoded; this matches cert-manager's layout
+// where ca.crt contains a single issuing CA certificate.
 func certFingerprint(certPEM []byte) ([sha256.Size]byte, error) {
 	block, _ := pem.Decode(certPEM)
 	if block == nil {

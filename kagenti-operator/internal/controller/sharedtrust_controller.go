@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
@@ -78,6 +79,8 @@ var (
 		"mcp-system", "istio-system", "istio-ztunnel",
 	}
 
+	// intermediateConfigs matches the standard RHOAI/OSSM3 layout.
+	// Values are intentionally hardcoded to match setup-kagenti.sh.
 	intermediateConfigs = []struct {
 		SecretName string
 		Namespace  string
@@ -356,9 +359,29 @@ func (r *SharedTrustReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		},
 	)
 
+	mapCacertsSecretToReconcile := handler.EnqueueRequestsFromMapFunc(
+		func(_ context.Context, obj client.Object) []reconcile.Request {
+			if obj.GetName() != CacertsSecretName {
+				return nil
+			}
+			for _, ic := range intermediateConfigs {
+				if obj.GetNamespace() == ic.Namespace {
+					return []reconcile.Request{{
+						NamespacedName: types.NamespacedName{
+							Name:      "shared-trust",
+							Namespace: IstioSystemNamespace,
+						},
+					}}
+				}
+			}
+			return nil
+		},
+	)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("SharedTrust").
 		Watches(&cmv1.Certificate{}, mapToCertificateReconcile).
+		Watches(&corev1.Secret{}, mapCacertsSecretToReconcile).
 		Complete(r)
 }
 
@@ -369,30 +392,33 @@ func CertManagerCRDExists(cfg *rest.Config) bool {
 		return false
 	}
 
-	for attempt := range 3 {
-		if attempt > 0 {
-			delay := time.Duration(attempt) * 5 * time.Second
-			sharedTrustLogger.Info("Retrying cert-manager CRD discovery", "attempt", attempt+1, "delay", delay)
-			time.Sleep(delay)
-		}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
+	var found bool
+	err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
 		resources, err := dc.ServerResourcesForGroupVersion("cert-manager.io/v1")
 		if err != nil {
-			sharedTrustLogger.Info("cert-manager CRDs not found", "attempt", attempt+1, "error", err)
-			continue
+			sharedTrustLogger.Info("cert-manager CRDs not found, retrying", "error", err)
+			return false, nil
 		}
 
 		for _, r := range resources.APIResources {
 			if r.Kind == "Certificate" {
-				sharedTrustLogger.Info("cert-manager CRDs detected: SharedTrust controller will start")
-				return true
+				found = true
+				return true, nil
 			}
 		}
 
 		sharedTrustLogger.Info("cert-manager.io/v1 group exists but Certificate kind not found")
-		return false
+		return true, nil
+	})
+
+	if found {
+		sharedTrustLogger.Info("cert-manager CRDs detected: SharedTrust controller will start")
+	} else {
+		sharedTrustLogger.Info("cert-manager CRDs not found after retries: SharedTrust controller will not start")
 	}
 
-	sharedTrustLogger.Info("cert-manager CRDs not found after retries: SharedTrust controller will not start")
-	return false
+	return found
 }
