@@ -50,8 +50,15 @@ const (
 	// ProxyInitModeRedirect transparently REDIRECTs pod traffic to the Envoy
 	// listeners (envoy-sidecar mode).
 	ProxyInitModeRedirect ProxyInitMode = "redirect"
+	// ProxyInitModeEnforceRedirect installs the fail-closed egress guard that
+	// REDIRECTs external TCP bypassing the forward proxy to AuthBridge's
+	// transparent listener (captured, not dropped) and DROPs non-TCP external
+	// egress. Always-on for proxy-sidecar / lite.
+	ProxyInitModeEnforceRedirect ProxyInitMode = "enforce-redirect"
 	// ProxyInitModeEnforceDrop installs the fail-closed egress guard that DROPs
-	// any egress bypassing the forward proxy (proxy-sidecar egress enforcement).
+	// any egress bypassing the forward proxy. Predates enforce-redirect; the
+	// init image retains it as a no-transparent-listener fallback, but the
+	// operator no longer emits it.
 	ProxyInitModeEnforceDrop ProxyInitMode = "enforce-drop"
 )
 

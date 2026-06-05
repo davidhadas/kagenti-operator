@@ -335,6 +335,40 @@ func TestBuildProxyInitContainer_EnforceDrop(t *testing.T) {
 	}
 }
 
+// enforce-redirect mode emits MODE / PROXY_UID / CLUSTER_CIDRS / TRANSPARENT_PORT
+// and none of the redirect-only vars (POD_IP, OUTBOUND_PORTS_EXCLUDE).
+func TestBuildProxyInitContainer_EnforceRedirect(t *testing.T) {
+	cfg := config.CompiledDefaults()
+	builder := NewContainerBuilder(cfg)
+	container := builder.BuildProxyInitContainer("enforce-redirect", "", "")
+
+	got := map[string]string{}
+	for _, e := range container.Env {
+		if e.ValueFrom != nil {
+			t.Errorf("enforce-redirect env %q must be a literal, not ValueFrom", e.Name)
+		}
+		got[e.Name] = e.Value
+	}
+	if got["MODE"] != "enforce-redirect" {
+		t.Errorf("MODE = %q, want enforce-redirect", got["MODE"])
+	}
+	if want := strconv.FormatInt(cfg.Proxy.UID, 10); got["PROXY_UID"] != want {
+		t.Errorf("PROXY_UID = %q, want %q", got["PROXY_UID"], want)
+	}
+	if want := strings.Join(cfg.Proxy.ClusterCIDRs, ","); got["CLUSTER_CIDRS"] != want {
+		t.Errorf("CLUSTER_CIDRS = %q, want %q", got["CLUSTER_CIDRS"], want)
+	}
+	if want := strconv.FormatInt(int64(cfg.Proxy.TransparentPort), 10); got["TRANSPARENT_PORT"] != want {
+		t.Errorf("TRANSPARENT_PORT = %q, want %q", got["TRANSPARENT_PORT"], want)
+	}
+	if _, ok := got["POD_IP"]; ok {
+		t.Error("enforce-redirect must not set POD_IP")
+	}
+	if _, ok := got["OUTBOUND_PORTS_EXCLUDE"]; ok {
+		t.Error("enforce-redirect must not set OUTBOUND_PORTS_EXCLUDE")
+	}
+}
+
 // An unknown mode must fail closed: BuildProxyInitContainer returns a
 // zero-value container (no name/image/env) rather than silently degrading to
 // redirect, which would ship a proxy-init with no egress guard (fail-open).
