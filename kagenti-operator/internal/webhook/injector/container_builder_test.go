@@ -335,6 +335,21 @@ func TestBuildProxyInitContainer_EnforceDrop(t *testing.T) {
 	}
 }
 
+// An unknown mode must fail closed: BuildProxyInitContainer returns a
+// zero-value container (no name/image/env) rather than silently degrading to
+// redirect, which would ship a proxy-init with no egress guard (fail-open).
+// This guards the exported API against a typo'd mode literal at a future
+// callsite — a typo in a fail-closed control is the worst failure mode.
+func TestBuildProxyInitContainer_InvalidMode(t *testing.T) {
+	builder := NewContainerBuilder(config.CompiledDefaults())
+	container := builder.BuildProxyInitContainer(ProxyInitMode("enfore-drop"), "", "")
+
+	if container.Name != "" || container.Image != "" || container.Env != nil {
+		t.Errorf("invalid mode must return a zero-value container, got name=%q image=%q env=%v",
+			container.Name, container.Image, container.Env)
+	}
+}
+
 func TestBuildPortExcludeValue(t *testing.T) {
 	tests := []struct {
 		name  string

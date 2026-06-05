@@ -170,6 +170,9 @@ func (c *PlatformConfig) Validate() error {
 		if len(c.Proxy.ClusterCIDRs) == 0 {
 			return fmt.Errorf("proxy.clusterCIDRs must be non-empty when proxy.egressEnforcement is %q (set the cluster's pod+service CIDRs)", EgressEnforcementEnforce)
 		}
+		// Syntactic validation only — overlapping ranges and IPv4/IPv6 mixing are
+		// accepted (iptables handles both, and the init script splits v4/v6 itself);
+		// we only reject malformed strings here.
 		for _, cidr := range c.Proxy.ClusterCIDRs {
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
 				return fmt.Errorf("proxy.clusterCIDRs entry %q is not a valid CIDR: %w", cidr, err)

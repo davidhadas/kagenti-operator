@@ -462,16 +462,17 @@ const mandatoryOutboundExclude = "8080"
 //   - "enforce-drop" (proxy-sidecar): a fail-closed egress guard that DROPs any
 //     egress bypassing the forward proxy. Driven by PROXY_UID + CLUSTER_CIDRS;
 //     the exclude args do not apply (the script ignores them in this mode).
-func (b *ContainerBuilder) BuildProxyInitContainer(mode, outboundPortsExclude, inboundPortsExclude string) corev1.Container {
+func (b *ContainerBuilder) BuildProxyInitContainer(mode ProxyInitMode, outboundPortsExclude, inboundPortsExclude string) corev1.Container {
 	var env []corev1.EnvVar
-	if mode == ProxyInitModeEnforceDrop {
+	switch mode {
+	case ProxyInitModeEnforceDrop:
 		// PROXY_UID is exempted from the DROP and MUST match the proxy
 		// container's RunAsUser (both derive from b.cfg.Proxy.UID). CLUSTER_CIDRS
 		// are allowed direct; everything else egressing the pod is dropped.
 		// POD_IP and the redirect-only exclude vars are unused in this mode.
 		clusterCIDRs := strings.Join(b.cfg.Proxy.ClusterCIDRs, ",")
 		env = []corev1.EnvVar{
-			{Name: "MODE", Value: ProxyInitModeEnforceDrop},
+			{Name: "MODE", Value: string(ProxyInitModeEnforceDrop)},
 			{Name: "PROXY_UID", Value: fmt.Sprintf("%d", b.cfg.Proxy.UID)},
 			{Name: "CLUSTER_CIDRS", Value: clusterCIDRs},
 		}
@@ -479,7 +480,7 @@ func (b *ContainerBuilder) BuildProxyInitContainer(mode, outboundPortsExclude, i
 			"mode", "enforce-drop",
 			"proxyUID", b.cfg.Proxy.UID,
 			"clusterCIDRs", clusterCIDRs)
-	} else {
+	case ProxyInitModeRedirect:
 		outboundValue := buildOutboundExcludeValue(outboundPortsExclude)
 		inboundValue := buildPortExcludeValue(inboundPortsExclude, "inbound-ports-exclude")
 
@@ -520,6 +521,14 @@ func (b *ContainerBuilder) BuildProxyInitContainer(mode, outboundPortsExclude, i
 				Value: inboundValue,
 			})
 		}
+	default:
+		// Fail closed. An unknown mode must NOT silently degrade to redirect:
+		// that would ship a proxy-init with no egress guard — fail-open, the
+		// worst outcome for a fail-closed control. Return a zero-value container
+		// so injection breaks visibly (empty name/image → admission/scheduler
+		// rejects it) rather than passing a security-defeating container through.
+		builderLog.Error(nil, "unknown proxy-init mode; refusing to build container (fail closed)", "mode", mode)
+		return corev1.Container{}
 	}
 
 	return corev1.Container{
