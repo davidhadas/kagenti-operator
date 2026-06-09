@@ -208,7 +208,7 @@ type AgentRuntimeStatus struct {
 // +kubebuilder:resource:shortName=art;agentrt
 // +kubebuilder:printcolumn:name="Type",type="string",JSONPath=".spec.type",description="Workload Type"
 // +kubebuilder:printcolumn:name="Target",type="string",JSONPath=".spec.targetRef.name",description="Target Workload"
-// +kubebuilder:printcolumn:name="CardFetched",type="string",JSONPath=".status.conditions[?(@.type=='CardFetched')].status",description="Card Fetch Status",priority=1
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status",description="Ready Status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // AgentRuntime attaches runtime configuration to a backing workload classified as an
