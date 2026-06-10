@@ -122,7 +122,7 @@ func (r *AgentRuntimeReconciler) getFeatureGates() *webhookconfig.FeatureGates {
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=operator.openshift.io,resources=networks,verbs=get
 
 func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -214,7 +214,8 @@ func (r *AgentRuntimeReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.ensureNamespaceSCCBinding(ctx, rt.Namespace); err != nil {
 		logger.Error(err, "Failed to ensure SCC RoleBinding")
 		if r.Recorder != nil {
-			r.Recorder.Event(rt, corev1.EventTypeWarning, "SCCBindingError", err.Error())
+			r.Recorder.Eventf(rt, nil, corev1.EventTypeWarning, "SCCBindingError",
+				"EnsureSCCBinding", err.Error())
 		}
 		r.updateErrorStatus(ctx, req.NamespacedName, ConditionTypeReady, "SCCBindingError", err.Error())
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil

@@ -119,7 +119,7 @@ func (p *mockSignatureProvider) VerifySignature(_ context.Context, _ *agentv1alp
 	}, nil
 }
 
-func (p *mockSignatureProvider) Name() string      { return "mock" }
+func (p *mockSignatureProvider) Name() string       { return "mock" }
 func (p *mockSignatureProvider) BundleHash() string { return "" }
 
 func TestIdentityBindingIntegration(t *testing.T) {

@@ -130,6 +130,8 @@ func testValidSignedAgentCard(t *testing.T) {
 	service := createSigstoreTestService(t, ctx, sigstoreTestNamespace, deploymentName)
 	defer deleteSigstoreResource(ctx, service)
 
+	waitForDeploymentAvailable(t, ctx, deploymentName, sigstoreTestNamespace, 30*time.Second)
+
 	// Create AgentCard CR
 	agentCard := &agentv1alpha1.AgentCard{
 		ObjectMeta: metav1.ObjectMeta{
@@ -254,6 +256,8 @@ func testAbsentBundlePlainAgentCard(t *testing.T) {
 	service := createSigstoreTestService(t, ctx, sigstoreTestNamespace, deploymentName)
 	defer deleteSigstoreResource(ctx, service)
 
+	waitForDeploymentAvailable(t, ctx, deploymentName, sigstoreTestNamespace, 30*time.Second)
+
 	agentCard := &agentv1alpha1.AgentCard{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cardName,
@@ -346,6 +350,8 @@ func testInvalidBundleAuditMode(t *testing.T) {
 
 	service := createSigstoreTestService(t, ctx, sigstoreTestNamespace, deploymentName)
 	defer deleteSigstoreResource(ctx, service)
+
+	waitForDeploymentAvailable(t, ctx, deploymentName, sigstoreTestNamespace, 30*time.Second)
 
 	agentCard := &agentv1alpha1.AgentCard{
 		ObjectMeta: metav1.ObjectMeta{
@@ -442,6 +448,8 @@ func testInvalidBundleEnforcementMode(t *testing.T) {
 	service := createSigstoreTestService(t, ctx, sigstoreTestNamespace, deploymentName)
 	defer deleteSigstoreResource(ctx, service)
 
+	waitForDeploymentAvailable(t, ctx, deploymentName, sigstoreTestNamespace, 30*time.Second)
+
 	agentCard := &agentv1alpha1.AgentCard{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cardName,
@@ -537,6 +545,8 @@ func testSLSAProvenanceExtraction(t *testing.T) {
 	service := createSigstoreTestService(t, ctx, sigstoreTestNamespace, deploymentName)
 	defer deleteSigstoreResource(ctx, service)
 
+	waitForDeploymentAvailable(t, ctx, deploymentName, sigstoreTestNamespace, 30*time.Second)
+
 	agentCard := &agentv1alpha1.AgentCard{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cardName,
@@ -623,6 +633,8 @@ func testPerCardIdentityOverride(t *testing.T) {
 
 	service := createSigstoreTestService(t, ctx, sigstoreTestNamespace, deploymentName)
 	defer deleteSigstoreResource(ctx, service)
+
+	waitForDeploymentAvailable(t, ctx, deploymentName, sigstoreTestNamespace, 30*time.Second)
 
 	// AgentCard with custom Sigstore verification settings
 	customIdentity := "https://custom.identity.example.com"

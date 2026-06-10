@@ -29,6 +29,7 @@ require (
 	cloud.google.com/go/iam v1.11.0 // indirect
 	cloud.google.com/go/longrunning v1.0.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -76,6 +77,7 @@ require (
 	github.com/go-openapi/testify/v2 v2.5.1 // indirect
 	github.com/go-openapi/validate v0.25.2 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
+	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/google/cel-go v0.26.0 // indirect
 	github.com/google/certificate-transparency-go v1.3.2 // indirect
@@ -88,6 +90,7 @@ require (
 	github.com/hashicorp/vault/api v1.23.0 // indirect
 	github.com/in-toto/attestation v1.1.2 // indirect
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20260527172527-a09352b57a22 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -117,7 +120,7 @@ require (
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stoewer/go-strcase v1.3.1 // indirect
-	github.com/theupdateframework/go-tuf/v2 v2.3.0 // indirect
+	github.com/theupdateframework/go-tuf/v2 v2.4.2 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/transparency-dev/formats v0.0.0-20251017110053-404c0d5b696c // indirect
 	github.com/transparency-dev/merkle v0.0.2 // indirect
