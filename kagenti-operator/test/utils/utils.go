@@ -751,3 +751,26 @@ func UncommentCode(filename, target, prefix string) error {
 	// nolint:gosec
 	return os.WriteFile(filename, out.Bytes(), 0644)
 }
+
+// ProbeWebhookTLS runs a temporary curl pod that attempts a TLS connection to the
+// webhook service. Returns nil if the webhook is accepting TLS connections, or an
+// error if it is not yet ready. Intended for use inside an Eventually() block.
+func ProbeWebhookTLS(namespace string) error {
+	podName := fmt.Sprintf("webhook-probe-%d", time.Now().UnixNano()%100000)
+	svcURL := fmt.Sprintf("https://kagenti-operator-webhook-service.%s.svc:443/", namespace)
+
+	cmd := exec.Command("kubectl", "run", podName,
+		"--rm", "-i", "--restart=Never",
+		"--image=curlimages/curl:latest",
+		"-n", namespace,
+		"--", "curl", "-sk", "-o", "/dev/null", "-w", "%{http_code}",
+		"--max-time", "5", svcURL)
+	output, err := Run(cmd)
+	if err != nil {
+		return fmt.Errorf("webhook TLS probe failed: %w", err)
+	}
+	if strings.TrimSpace(output) == "000" {
+		return fmt.Errorf("webhook TLS probe got HTTP 000 (connection refused)")
+	}
+	return nil
+}

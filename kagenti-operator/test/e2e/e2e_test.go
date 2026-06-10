@@ -344,6 +344,11 @@ var _ = Describe("AuthBridge Injection E2E", Ordered, func() {
 			g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
+		By("waiting for webhook TLS to accept connections")
+		Eventually(func() error {
+			return utils.ProbeWebhookTLS(controllerNamespace)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
 		By("creating auth bridge test namespace")
 		cmd := exec.Command("kubectl", "create", "ns", authBridgeTestNamespace)
 		_, err := utils.Run(cmd)
@@ -696,6 +701,11 @@ var _ = Describe("AgentCard E2E", Ordered, func() {
 			g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
+		By("waiting for webhook TLS to accept connections")
+		Eventually(func() error {
+			return utils.ProbeWebhookTLS(controllerNamespace)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
 		By("creating test namespace with labels")
 		cmd := exec.Command("kubectl", "create", "ns", testNamespace)
 		_, err := utils.Run(cmd)
@@ -1038,6 +1048,11 @@ rules:
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+		By("waiting for webhook TLS to accept connections")
+		Eventually(func() error {
+			return utils.ProbeWebhookTLS(controllerNamespace)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("creating test namespace")
 		cmd := exec.Command("kubectl", "create", "ns", agentRuntimeTestNamespace)
@@ -1513,6 +1528,11 @@ rules:
 			g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
+		By("waiting for webhook TLS to accept connections")
+		Eventually(func() error {
+			return utils.ProbeWebhookTLS(controllerNamespace)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
 		By("setting KAGENTI_SPIRE_TRUST_DOMAIN env var")
 		envCmd := exec.Command("kubectl", "set", "env", "deployment/"+controllerDeployment,
 			"-n", controllerNamespace, "KAGENTI_SPIRE_TRUST_DOMAIN=example.org")
@@ -1974,6 +1994,11 @@ rules:
 			g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
+		By("waiting for webhook TLS to accept connections")
+		Eventually(func() error {
+			return utils.ProbeWebhookTLS(controllerNamespace)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+
 		By("creating skill discovery test namespace")
 		cmd := exec.Command("kubectl", "create", "ns", skillDiscoveryTestNamespace)
 		_, err := utils.Run(cmd)
@@ -2134,6 +2159,11 @@ rules:
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 			}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+			By("waiting for webhook TLS to accept connections after restart")
+			Eventually(func() error {
+				return utils.ProbeWebhookTLS(controllerNamespace)
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		})
 
 		It("should populate linkedSkills from annotation", func() {
@@ -2437,6 +2467,11 @@ var _ = Describe("Istio Mesh Enrollment E2E", Ordered, func() {
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(output).NotTo(BeEmpty(), "webhook endpoint not yet populated")
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
+		By("waiting for webhook TLS to accept connections")
+		Eventually(func() error {
+			return utils.ProbeWebhookTLS(controllerNamespace)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("creating test namespace")
 		cmd := exec.Command("kubectl", "create", "ns", istioMeshTestNamespace)
