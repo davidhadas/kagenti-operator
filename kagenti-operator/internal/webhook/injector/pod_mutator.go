@@ -302,6 +302,44 @@ func (m *PodMutator) InjectAuthBridge(ctx context.Context, podSpec *corev1.PodSp
 	}
 
 	// ========================================
+	// Resolve egressEnforcement (CR > namespace > enforce-redirect)
+	// ========================================
+	//
+	// Controls proxy-init injection in proxy-sidecar / lite modes.
+	// "enforce-redirect" (default): proxy-init injected with iptables.
+	// "none": proxy-init skipped — cooperative HTTP_PROXY only.
+	// envoy-sidecar mode ignores this (proxy-init is structural there).
+	egressEnforcement := ""
+	egressEnforcementSource := ""
+	if arOverrides != nil && arOverrides.EgressEnforcement != nil {
+		egressEnforcement = *arOverrides.EgressEnforcement
+		egressEnforcementSource = "agentruntime-cr"
+	}
+	if egressEnforcement == "" {
+		if ee := ExtractEgressEnforcement(nsConfig.AuthBridgeRuntimeYAML); ee != "" {
+			egressEnforcement = ee
+			egressEnforcementSource = "namespace-configmap"
+		}
+	}
+	if egressEnforcement == "" {
+		egressEnforcement = EgressEnforcementEnforceRedirect
+		egressEnforcementSource = "cluster-default"
+	}
+	switch egressEnforcement {
+	case EgressEnforcementEnforceRedirect, EgressEnforcementNone:
+		// recognized, keep as-is
+	default:
+		mutatorLog.Info("WARN: unrecognized egressEnforcement; defaulting to enforce-redirect (fail closed)",
+			"namespace", namespace, "crName", crName,
+			"unrecognized", egressEnforcement, "source", egressEnforcementSource)
+		egressEnforcement = EgressEnforcementEnforceRedirect
+		egressEnforcementSource = "default-invalid-fallback"
+	}
+	mutatorLog.Info("resolved egress enforcement",
+		"namespace", namespace, "crName", crName,
+		"mode", egressEnforcement, "source", egressEnforcementSource)
+
+	// ========================================
 	// Resolve AllowedAudiences (from AgentRuntime CR)
 	// ========================================
 	var allowedAudiences []string
@@ -534,19 +572,27 @@ func (m *PodMutator) InjectAuthBridge(ctx context.Context, podSpec *corev1.PodSp
 			injectHTTPProxyEnv(c, forwardProxyPort)
 		}
 
-		// Fail-closed egress enforcement (always-on for proxy-sidecar / lite).
+		// Egress enforcement for proxy-sidecar / lite.
 		// HTTP_PROXY above is cooperative — an app that ignores it egresses
-		// directly. The enforce-redirect proxy-init guard transparently REDIRECTs
-		// any bypass egress to the forward proxy's transparent listener, so it is
-		// captured rather than dropped and nothing breaks. envoy-sidecar enforces
-		// structurally via its own transparent redirect, so this is the
-		// proxy-sidecar / lite path only. The exempted PROXY_UID equals the proxy
-		// container's RunAsUser (both b.cfg.Proxy.UID).
-		if !containerExists(podSpec.InitContainers, ProxyInitContainerName) {
-			podSpec.InitContainers = append(podSpec.InitContainers,
-				builder.BuildProxyInitContainer(ProxyInitModeEnforceRedirect, "", ""))
-			mutatorLog.Info("proxy-sidecar egress enforcement enabled (enforce-redirect)",
-				"namespace", namespace, "crName", crName)
+		// directly. When egressEnforcement is "enforce-redirect" (default),
+		// proxy-init is injected with iptables rules that transparently
+		// REDIRECT bypass egress to AuthBridge's transparent listener.
+		// When "none", proxy-init is skipped — use on platforms where
+		// iptables is unavailable (ROSA HCP, managed OpenShift).
+		// envoy-sidecar mode has its own structural proxy-init and ignores
+		// this setting.
+		if egressEnforcement == EgressEnforcementEnforceRedirect {
+			if !containerExists(podSpec.InitContainers, ProxyInitContainerName) {
+				podSpec.InitContainers = append(podSpec.InitContainers,
+					builder.BuildProxyInitContainer(ProxyInitModeEnforceRedirect, "", ""))
+				mutatorLog.Info("proxy-sidecar egress enforcement enabled (enforce-redirect)",
+					"namespace", namespace, "crName", crName)
+			}
+		} else {
+			mutatorLog.Info("proxy-sidecar egress enforcement disabled (cooperative mode)",
+				"namespace", namespace, "crName", crName,
+				"egressEnforcement", egressEnforcement,
+				"source", egressEnforcementSource)
 		}
 
 		// spiffe-helper is bundled in the authbridge combined image and
