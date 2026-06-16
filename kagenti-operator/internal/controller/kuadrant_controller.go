@@ -124,10 +124,37 @@ func (r *KuadrantReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 func (r *KuadrantReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&kuadrant.Kuadrant{}).
 		Named("Kuadrant").
-		Complete(r)
+		Complete(r); err != nil {
+		return err
+	}
+
+	// Bootstrap: the For() watch only fires on existing CR events, so we
+	// need an initial reconcile to create the CR when none exists yet.
+	return mgr.Add(&kuadrantBootstrap{reconciler: r})
+}
+
+// kuadrantBootstrap is a manager.Runnable that triggers one reconcile after
+// the manager cache is synced, ensuring the Kuadrant CR is created on first
+// startup even when no CR exists to generate watch events.
+type kuadrantBootstrap struct {
+	reconciler *KuadrantReconciler
+}
+
+func (b *kuadrantBootstrap) Start(ctx context.Context) error {
+	kuadrantLogger.Info("Bootstrap: triggering initial Kuadrant reconcile")
+	_, err := b.reconciler.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      kuadrantCRName,
+			Namespace: kuadrantNamespace,
+		},
+	})
+	if err != nil {
+		kuadrantLogger.Error(err, "Bootstrap reconcile failed — controller watch will retry on next event")
+	}
+	return nil
 }
 
 // KuadrantCRDExists checks whether the kuadrant.io/v1beta1 Kuadrant CRD is
