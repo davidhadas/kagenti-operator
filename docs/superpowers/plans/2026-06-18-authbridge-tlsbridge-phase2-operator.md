@@ -4,12 +4,12 @@
 
 **Goal:** Make the AuthBridge TLS bridge work end-to-end on operator-deployed agents — the operator provisions a per-agent cert-manager CA, mounts the signing key into the sidecar and the trust cert + trust env into the agent, and renders the `tls_bridge:` config block — so a real agent's outbound HTTPS is decrypted into the pipeline, gated behind an off-by-default `tlsBridgeMode`.
 
-**Architecture:** A new `tlsBridgeMode: disabled|enabled` field on the `AgentRuntime` CRD, resolved CR→namespace→default exactly like `mtlsMode`. When `enabled` (and feature-gated on, and cert-manager present, and `authBridgeMode ∈ {proxy-sidecar, lite}`), a new per-agent CA reconciler creates a SelfSigned `Issuer` + a CA `Certificate` (`isCA: true`, **no Name Constraints**) → a Secret. The mutating webhook hard-mounts `tls.crt`/`tls.key` into the sidecar (mode `0440`) and `ca.crt` + trust env into the agent, and renders `tls_bridge: {enabled: true, scope: all, ca_source: file}` into the per-agent config. A small companion change in `kagenti-extensions` localhost-binds + redacts the `:9094` session API when bridging is on, since it now carries decrypted bodies.
+**Architecture:** A new `tlsBridgeMode: disabled|enabled` field on the `AgentRuntime` CRD, resolved CR→namespace→default exactly like `mtlsMode`. When `enabled` (and feature-gated on, and cert-manager present, and `authBridgeMode ∈ {proxy-sidecar, lite}`), a new per-agent CA reconciler creates a SelfSigned `Issuer` + a CA `Certificate` (`isCA: true`, **no Name Constraints**) → a Secret. The mutating webhook hard-mounts `tls.crt`/`tls.key` into the sidecar (mode `0440`) and `ca.crt` + trust env into the agent, and renders `tls_bridge: {mode: enabled, ca_dir: /etc/authbridge/tls-bridge-ca}` into the per-agent config (consolidated schema, kagenti-extensions#522 — no scope/ca_source/cert-paths). A small companion change in `kagenti-extensions` localhost-binds + redacts the `:9094` session API when bridging is on, since it now carries decrypted bodies.
 
 **Tech Stack:** Go 1.x (kagenti-operator, kubebuilder/controller-runtime), cert-manager Go API `github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1` (v1.20.2, already vendored + scheme-registered), `k8s.io/utils/ptr`. Phase-1 AuthBridge code (kagenti-extensions PR #522) is the **prerequisite** — the rendered `tls_bridge:` block is only understood by the post-#522 authbridge image.
 
 **Locked decisions (from brainstorming):**
-1. CRD `tlsBridgeMode: disabled|enabled`; `enabled` ⇒ render `scope: all`; `envoy-sidecar` + `enabled` ⇒ validating-webhook reject.
+1. CRD `tlsBridgeMode: disabled|enabled` maps 1:1 to `tls_bridge.mode`; `envoy-sidecar` + `enabled` ⇒ validating-webhook reject. (The authbridge schema was consolidated in #522: no scope/external — `enabled` intercepts all eligible on the configured ports.)
 2. **Unconstrained** per-agent CA (no X.509 Name Constraints). Containment = per-agent isolation + sidecar-only `0440` key + rotation. (Avoids the cert-manager `NameConstraints` feature-gate dependency entirely.)
 3. Fully **decoupled** from SPIRE/mTLS. Hard deps only: `authBridgeMode ∈ {proxy-sidecar, lite}` + cert-manager installed.
 
@@ -523,9 +523,7 @@ git commit -s -m "feat(tlsbridge): RBAC to create per-agent cert-manager Issuer/
 ```go
 func TestEnsurePerAgentConfigMap_TLSBridgeBlock(t *testing.T) {
 	// Render with tlsBridgeMode=enabled -> config.yaml contains:
-	//   tls_bridge: {enabled: true, scope: all, ca_source: file,
-	//                ca_cert_path: /etc/authbridge/tls-bridge-ca/tls.crt,
-	//                ca_key_path:  /etc/authbridge/tls-bridge-ca/tls.key}
+	//   tls_bridge: {mode: enabled, ca_dir: /etc/authbridge/tls-bridge-ca}
 	// Render with disabled -> no tls_bridge key.
 }
 ```
@@ -540,12 +538,12 @@ Run: `cd kagenti-operator && go test ./internal/webhook/injector/ -run TestEnsur
 
 ```go
 	if tlsBridgeMode == TLSBridgeModeEnabled {
+		// Consolidated schema (kagenti-extensions#522): mode + ca_dir only.
+		// ca_dir = the mounted cert-manager Secret (tls.crt/tls.key/ca.crt by
+		// convention). No scope/ca_source/cert+key paths.
 		cfg["tls_bridge"] = map[string]interface{}{
-			"enabled":      true,
-			"scope":        "all", // decision 1: enabled => all
-			"ca_source":    "file",
-			"ca_cert_path": TLSBridgeCAMountPath + "/tls.crt",
-			"ca_key_path":  TLSBridgeCAMountPath + "/tls.key",
+			"mode":   "enabled",
+			"ca_dir": TLSBridgeCAMountPath,
 		}
 	} else {
 		delete(cfg, "tls_bridge")
@@ -560,7 +558,7 @@ Run: `go test ./internal/webhook/injector/ -run TestEnsurePerAgentConfigMap_TLSB
 
 ```bash
 git add kagenti-operator/internal/webhook/injector/pod_mutator.go kagenti-operator/internal/webhook/injector/pod_mutator_test.go
-git commit -s -m "feat(tlsbridge): render tls_bridge config block (enabled => scope:all)"
+git commit -s -m "feat(tlsbridge): render tls_bridge config block (mode + ca_dir)"
 ```
 
 ---
@@ -783,7 +781,7 @@ git commit -s -m "test(tlsbridge): e2e — operator-provisioned CA decrypts agen
 ## Phase 2 done — definition of done
 
 - Operator builds; `make manifests generate` clean; unit tests green (`go test ./...`).
-- `tlsBridgeMode: enabled` on a `proxy-sidecar`/`lite` agent (gate on, cert-manager present) → operator provisions the per-agent CA, hard-mounts the signing key (`0440`) into the sidecar + `ca.crt`+trust env into the agent, renders `tls_bridge: {enabled, scope: all, ca_source: file}` → the agent's outbound HTTPS is **decrypted into the pipeline** end-to-end (h1.1 **and** h2), proven by E2E.
+- `tlsBridgeMode: enabled` on a `proxy-sidecar`/`lite` agent (gate on, cert-manager present) → operator provisions the per-agent CA, hard-mounts the signing key (`0440`) into the sidecar + `ca.crt`+trust env into the agent, renders `tls_bridge: {mode: enabled, ca_dir: …}` → the agent's outbound HTTPS is **decrypted into the pipeline** end-to-end (h1.1 **and** h2), proven by E2E.
 - `tlsBridgeMode: enabled` + `envoy-sidecar` is **rejected** at admission.
 - Feature gate **off by default**; disabled/gate-off agents are byte-identical to today.
 - Un-bridgeable traffic (pinned client, trust-env-ignoring runtime) safely tunnels; cert-manager-absent → pod Pending (documented), never silent un-bridged egress.
@@ -803,7 +801,7 @@ The operator renders a `tls_bridge:` block only the post-#522 authbridge image u
 
 ## Self-review notes
 
-- **Decision coverage:** (1) `tlsBridgeMode disabled|enabled` = Task 1; `enabled⇒scope:all` = Task 8; envoy reject = Task 5. (2) unconstrained CA (no `nameConstraints`) = Task 6. (3) decoupled from SPIRE/mtls = no SPIRE auto-enable anywhere; gate + `proxy-sidecar|lite` + cert-manager are the only deps (Tasks 6/10). Off-by-default = Task 3.
+- **Decision coverage:** (1) `tlsBridgeMode disabled|enabled` = Task 1; renders `tls_bridge.mode` 1:1 = Task 8; envoy reject = Task 5. (2) unconstrained CA (no `nameConstraints`) = Task 6. (3) decoupled from SPIRE/mtls = no SPIRE auto-enable anywhere; gate + `proxy-sidecar|lite` + cert-manager are the only deps (Tasks 6/10). Off-by-default = Task 3.
 - **Ordering/race:** hard mount (`Optional` unset, Task 9) + reconciler-creates-Certificate-before-pod (Task 6) is the 3-actor liveness guarantee; cert-manager-absent → Pending (Task 12 Step 5), never silent un-bridged egress.
 - **0440 vs 0400:** Task 9 uses `0440` deliberately (non-root proxy + `FSGroup=0`); validated in Task 12 Step 3 (self-check OK proves the proxy read its key and minted).
 - **Known follow-ups (carried from Phase 1 review #522):** bound the runtime `SkipSet` + per-host verify cache (LRU/TTL); CA rotation is restart-based (cert-manager rotates the Secret; the proxy reads `FileSource` once at boot — zero-downtime rotation via file-watch is a later item); h2-through-bridge gets its first real exercise in Task 12.
