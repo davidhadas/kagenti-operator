@@ -734,6 +734,13 @@ func main() {
 			setupLog.Error(err, "unable to create controller", "controller", "SharedTrust")
 			os.Exit(1)
 		}
+		if err = (&controller.TLSBridgeCAReconciler{
+			Client: mgr.GetClient(),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "TLSBridgeCA")
+			os.Exit(1)
+		}
 	}
 
 	// Validation webhooks
@@ -791,6 +798,19 @@ func main() {
 			os.Exit(1)
 		}
 		setupLog.Info("OTel collector bootstrap enabled")
+	}
+
+	keycloakBootstrap := &bootstrap.KeycloakBootstrapRunnable{
+		Client:            mgr.GetClient(),
+		APIReader:         mgr.GetAPIReader(),
+		Namespace:         keycloakAdminSecretNamespace,
+		Realm:             keycloakRealm,
+		KeycloakPublicURL: keycloakPublicURL,
+		Log:               ctrl.Log.WithName("bootstrap"),
+	}
+	if err := mgr.Add(keycloakBootstrap); err != nil {
+		setupLog.Error(err, "unable to add Keycloak bootstrap runnable")
+		os.Exit(1)
 	}
 
 	if enableAuthbridgeConfig {
